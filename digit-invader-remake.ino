@@ -18,14 +18,7 @@ https://code.google.com/p/digit-invader-remake/downloads/list
 Component list:
 https://code.google.com/p/digit-invader-remake/w/list
  */
-#include <LiquidCrystal.h>
-
-// 16x2 LiquidCrystal display connections:
-// Arduino pin 1 <==> LCD pin 4 (RS)
-// Arduino pin 2 <==> LCD pin 5 (RW)
-// Arduino pin 3 <==> LCD pin 6 (Enable)
-// Arduino pins 4,5,6,7 <==> LCD pins 11,12,13,14 (d4, d5, d6, d7)
-LiquidCrystal lcd(1, 2, 3, 4, 5, 6, 7);
+#include "vfd.h"
 
 /* Set the appropriate digital I/O pin connections */
 //the aim button and fire button should be connected to pins 8,9 with resistors
@@ -181,6 +174,32 @@ byte lives_1_symbol[8] = {
     B00000,
 };
 
+int lcd_cursor = 0;
+
+void lcd_print(const char *p) {
+    char ch;
+    while (ch = *(p++)) {
+        if (ch >= '0' && ch <= '9') {
+            setDigit(lcd_cursor++, ch - '0');
+        } else if (ch == '-') {
+            setDigit(lcd_cursor++, -1);
+        } else {
+            switch (ch) {
+                case 'a':
+                case '-': setSegments(lcd_cursor++, 0b00100000); break;
+                case 'b': setSegments(lcd_cursor++, 0b10100000); break;
+                case 'c': setSegments(lcd_cursor++, 0b10101000); break;
+                case 'n': setSegments(lcd_cursor++, 0b01100010); break;
+                default: setSegments(lcd_cursor++, 0b11011); break;
+            }
+        }
+    }    
+}
+void lcd_print(int i) {
+    String s;
+    s += i;
+    lcd_print(s.c_str());
+}
 
 void playToneInHz(int Hz, long durationInMicroS) { //it seems that this function can be replaced with tone() function
     long elapsed_time = 0;
@@ -250,16 +269,7 @@ void playDefenceLineFallingTone() {
 
 void setup()
 {
-    //  lcd.createChar(0, smiley);
-    lcd.createChar(0, commander_symbol);
-    lcd.createChar(1, lives_1_symbol);
-    lcd.createChar(2, lives_2_symbol);
-    lcd.createChar(3, lives_3_symbol);
-
-    lcd.begin(16,2);
-    lcd.clear();
-    lcd.setCursor(0,1);
-    lcd.print("   16-30");
+    setupVfd();
 
     randomSeed(analogRead(0));
     pinMode(AIM_PIN, INPUT);
@@ -271,7 +281,7 @@ void setup()
     }
 
     delay(2000);
-    lcd.clear();
+    clearVfd();
 }
 
 void loop()
@@ -280,10 +290,11 @@ void loop()
     fire_current_state = digitalRead(FIRE_PIN);
 
     if (game_over) {
-        lcd.setCursor(0,0);
-        lcd.print("GAME OVER");
-        lcd.setCursor(0,1);
-        lcd.print(player_score);
+        setSegments(10, 0b11011010); // "GAME OVER"
+        setSegments(11, 0b11011110);
+
+        lcd_cursor = 1;
+        lcd_print(player_score);
         if (!game_over_tone_played) {
             playGameOverTone();
             game_over_tone_played = true;
@@ -331,7 +342,7 @@ void loop()
                         if (invader_killed == COMMANDER_INVADER) {
                             //give bonus score 300 to player
                             player_score += COMMANDER_INVADER_SCORE;
-                            lcd.clear();
+                            clearVfd();
 
                             playCommanderGotShotTone();						
                         } 
@@ -358,11 +369,11 @@ void loop()
                         if (invader_killed_count == encounter_invader_total) {
                             //display encounter number, hyphen and player score for a few seconds
                             //reset queue, initialize all encounter variables
-                            lcd.clear();
-                            lcd.setCursor(0,1);
-                            lcd.print(current_encounter+1);
-                            lcd.print("-");
-                            lcd.print(player_score);
+                            clearVfd();
+                            lcd_cursor = 1;
+                            lcd_print(current_encounter+1);
+                            lcd_print("-");
+                            lcd_print(player_score);
 
                             playAdvanceEncounterTone();						
 
@@ -390,7 +401,7 @@ void loop()
                     } 
                     else { //no invader got hit! The missile misses
                         //flash the screen once
-                        lcd.clear();
+                        clearVfd();
 
                         playMissedTone();
                     }
@@ -399,7 +410,7 @@ void loop()
                 } 
                 else { //no more missiles are available
                     game_over = true;
-                    lcd.clear();
+                    clearVfd();
                 }     
 
 
@@ -447,10 +458,10 @@ void loop()
                     //play losing noise for 1 second and
                     //reset almost everything
 
-                    lcd.clear();                    
+                    clearVfd();                    
                     //show player score
-                    lcd.setCursor(0,1);
-                    lcd.print(player_score);
+                    lcd_cursor = 1;
+                    lcd_print(player_score);
 
                     playDefenceLineFallingTone();
 
@@ -461,11 +472,11 @@ void loop()
                         invader_queue[i] = BLANK;
                     }
                     aim_current_value = 0;                
-                    lcd.clear();
+                    clearVfd();
                 } 
                 else { //defense line remaining == 0
                     game_over = true;
-                    lcd.clear();
+                    clearVfd();
                 }
             }
 
@@ -475,29 +486,30 @@ void loop()
 
         //update screen
         if (!game_over) {
-            lcd.setCursor(0,1);
+            lcd_cursor = 1;
             if (aim_current_value < 10) {
-                lcd.print((word)aim_current_value);
+                lcd_print((word)aim_current_value);
             } 
             else {
-                lcd.write(COMMANDER_INVADER_CHAR_CODE);
+                lcd_print("n");
             }
 
-            lcd.setCursor(1,1);
+            lcd_cursor = 2;
             if (defense_line_remaining > 0) {
-                lcd.write(defense_line_remaining);
+                char ch[2] = {'a' + defense_line_remaining - 1, 0};
+                lcd_print(ch);
             }
 
             for (int i = 0; i < current_stage_queue_length; i++) {
-                lcd.setCursor(2+i, 1);
+                lcd_cursor = 3+i;
                 if (invader_queue[i] == BLANK) {
-                    lcd.print(' ');
+                    setSegments(lcd_cursor++, 0);
                 } 
                 else if (invader_queue[i] == COMMANDER_INVADER) {
-                    lcd.write(COMMANDER_INVADER_CHAR_CODE);
+                    setSegments(lcd_cursor++, COMMANDER_INVADER_CHAR_CODE);
                 } 
                 else {
-                    lcd.print((word)invader_queue[i]);
+                    lcd_print((word)invader_queue[i]);
                 }
             }
 
