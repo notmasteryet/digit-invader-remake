@@ -11,15 +11,15 @@ const int STROBE = 4;
 const int CLK = 5;
 
 void writeVFD(uint16_t grids, uint8_t segs) {
-  shiftOut(DIN, CLK, MSBFIRST, (segs >> 6) | ((grids & 1) << 3)| ((grids & 2) << 1));
-  shiftOut(DIN, CLK, MSBFIRST, ((segs << 2) & 0b11111100) | ((grids >> 10) & 3));  
+  shiftOut(DIN, CLK, MSBFIRST, (segs >> 6) | ((grids & 1) << 3) | ((grids & 2) << 1));
+  shiftOut(DIN, CLK, MSBFIRST, ((segs << 2) & 0b11111100) | ((grids >> 10) & 3));
   shiftOut(DIN, CLK, MSBFIRST, (grids >> 2) & 255);
   digitalWrite(STROBE, HIGH);
-  digitalWrite(STROBE, LOW);  
+  digitalWrite(STROBE, LOW);
 }
 
 uint8_t digitToBits(int8_t d) {
-  switch(d) {
+  switch (d) {
     case 0: return 0b11011110;
     case 1: return 0b110;
     case 2: return 0b11101100;
@@ -36,14 +36,14 @@ uint8_t digitToBits(int8_t d) {
   return 0;
 }
 
-ISR(TIMER1_COMPA_vect) 
-{
+ISR(TIMER1_COMPA_vect) {
   writeVFD((1 << vfd_p), vfd[vfd_p]);
   if (++vfd_p >= 12) vfd_p = 0;
 }
 
 void setupVfd() {
-  pinMode(BLANK, OUTPUT); digitalWrite(BLANK, HIGH);
+  pinMode(BLANK, OUTPUT);
+  digitalWrite(BLANK, HIGH);
   pinMode(STROBE, OUTPUT);
   pinMode(DIN, OUTPUT);
   pinMode(CLK, OUTPUT);
@@ -54,15 +54,15 @@ void setupVfd() {
   clearVfd();
   vfd_p = 0;
 
-	noInterrupts();
-	TCCR1A = 0;
-	TCCR1B = (1 << WGM12);
-  TCNT1 = 0;  
-	/*
+  noInterrupts();
+  TCCR1A = 0;
+  TCCR1B = (1 << WGM12);
+  TCNT1 = 0;
+  /*
 		OCR1A = [16, 000, 000 / (prescaler * 1)] - 1
-		OCR1A = [16, 000, 000 / (8 * 2000)] - 1 = 1000 - 1
+		OCR1A = [16, 000, 000 / (8 * 1500)] - 1 = 1000 - 1
 	*/
-	OCR1A  = 999;
+  OCR1A = 1499;
   /*
 	Prescaler:
 			1    [CS10]
@@ -71,8 +71,8 @@ void setupVfd() {
 			256  [CS12]
 			1024 [CS12 + CS10]
 	*/
-	TCCR1B |= (1 << CS11);
-	TIMSK1 |= (1 << OCIE1A); 
+  TCCR1B |= (1 << CS11);
+  TIMSK1 |= (1 << OCIE1A);
   interrupts();
 }
 

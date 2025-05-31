@@ -29,6 +29,7 @@ const byte FIRE_PIN = 9;
 //pin 10 is for speaker, note that you need to use a pin that has PWM support if you would like to use other pins
 const byte SPEAKER_PIN = 10; 
 
+const byte LED_PIN = 6;
 
 const word HIT = 1157;
 const word MISSED = 543;
@@ -116,9 +117,6 @@ byte invader_killed_count = 0;
 byte current_stage_queue_length = stage_queue_length[0];
 
 
-
-
-
 //missing features:
 //play sound when missed [DONE]
 //play sound when hit [DONE]
@@ -134,46 +132,6 @@ byte current_stage_queue_length = stage_queue_length[0];
 //show curent encounter and player score during advance encounter [DONE]
 
 
-byte commander_symbol[8] = {
-    B00000,
-    B00000,
-    B01010,
-    B11111,
-    B10001,
-    B10001,
-    B10001,
-};
-
-byte lives_3_symbol[8] = {
-    B11111,
-    B00000,
-    B00000,
-    B01110,
-    B00000,
-    B00000,
-    B11111,
-};
-
-byte lives_2_symbol[8] = {
-    B00000,
-    B00000,
-    B00000,
-    B01110,
-    B00000,
-    B00000,
-    B11111,
-};
-
-byte lives_1_symbol[8] = {
-    B00000,
-    B00000,
-    B00000,
-    B01110,
-    B00000,
-    B00000,
-    B00000,
-};
-
 int lcd_cursor = 0;
 
 void lcd_print(const char *p) {
@@ -181,8 +139,6 @@ void lcd_print(const char *p) {
     while (ch = *(p++)) {
         if (ch >= '0' && ch <= '9') {
             setDigit(lcd_cursor++, ch - '0');
-        } else if (ch == '-') {
-            setDigit(lcd_cursor++, -1);
         } else {
             switch (ch) {
                 case 'a':
@@ -190,7 +146,8 @@ void lcd_print(const char *p) {
                 case 'b': setSegments(lcd_cursor++, 0b10100000); break;
                 case 'c': setSegments(lcd_cursor++, 0b10101000); break;
                 case 'n': setSegments(lcd_cursor++, 0b01100010); break;
-                default: setSegments(lcd_cursor++, 0b11011); break;
+                default:
+                case ' ': setSegments(lcd_cursor++, 0); break;
             }
         }
     }    
@@ -202,16 +159,18 @@ void lcd_print(int i) {
 }
 
 void playToneInHz(int Hz, long durationInMicroS) { //it seems that this function can be replaced with tone() function
-    long elapsed_time = 0;
-    double note = 1000000/Hz;
-    while (elapsed_time  < durationInMicroS) {
-        digitalWrite(SPEAKER_PIN, HIGH);
-        delayMicroseconds(note / 2);
-        digitalWrite(SPEAKER_PIN, LOW);
-        delayMicroseconds(note / 2);
-        elapsed_time += (note);
-    }
-    //tone(SPEAKER_PIN, Hz, durationInMicroS/1000); //although it is much more convenient to use the tone() function, yet it is too good in the sense that it is non-blocking and does not simulate exactly eh sound given in the calculator
+    // long elapsed_time = 0;
+    // double note = 1000000/Hz;
+    // while (elapsed_time  < durationInMicroS) {
+    //     digitalWrite(SPEAKER_PIN, HIGH);
+    //     delayMicroseconds(note / 2);
+    //     digitalWrite(SPEAKER_PIN, LOW);
+    //     delayMicroseconds(note / 2);
+    //     elapsed_time += (note);
+    // }
+    long d = durationInMicroS/1000;
+    tone(SPEAKER_PIN, Hz, d); //although it is much more convenient to use the tone() function, yet it is too good in the sense that it is non-blocking and does not simulate exactly eh sound given in the calculator
+    delay(d);
 }
 
 void playGameOverTone() {
@@ -266,22 +225,50 @@ void playDefenceLineFallingTone() {
 }
 
 
+void reset() {
+  aim_current_state = HIGH;
+  fire_current_state = HIGH;
+  aim_last_state = aim_current_state;
+  fire_last_state = fire_current_state;
+  player_score = 0;
+  game_over = false;
+  current_encounter = 0;
+  current_stage = 0;
+  game_over_tone_played = false;
+  aim_current_value = 0;
+
+  defense_line_remaining = defense_line_total;
+  encounter_invader_remaining = encounter_invader_total;
+  encounter_missile_remaining = encounter_missile_total;
+
+  killed_invader_sum = 0;
+  killed_invader_sum_remainder = 0;
+  invasion_delay_countdown_remaining = encounter_delay_countdown[0];
+  commander_invader_2b_generated = 0;
+  invader_killed_count = 0;
+
+  current_stage_queue_length = stage_queue_length[0];
+  for (int i = 0; i < (current_stage_queue_length + 1); i++) {
+    invader_queue[i] = BLANK;
+  }
+  clearVfd();
+  digitalWrite(LED_PIN, LOW);
+}
 
 void setup()
 {
     setupVfd();
 
     randomSeed(analogRead(0));
-    pinMode(AIM_PIN, INPUT);
-    pinMode(FIRE_PIN, INPUT);
+    pinMode(AIM_PIN, INPUT_PULLUP);
+    pinMode(FIRE_PIN, INPUT_PULLUP);
     pinMode(SPEAKER_PIN, OUTPUT);
 
-    for (int i = 0; i < (current_stage_queue_length + 1); i++) {
-        invader_queue[i] = BLANK;
-    }
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, LOW);
 
-    delay(2000);
-    clearVfd();
+    reset();
+    delay(200);
 }
 
 void loop()
@@ -292,12 +279,20 @@ void loop()
     if (game_over) {
         setSegments(10, 0b11011010); // "GAME OVER"
         setSegments(11, 0b11011110);
+        digitalWrite(LED_PIN, HIGH);
 
         lcd_cursor = 1;
         lcd_print(player_score);
         if (!game_over_tone_played) {
             playGameOverTone();
             game_over_tone_played = true;
+        }
+
+        if (aim_current_state == LOW || fire_current_state == LOW) {
+            delay(200);
+            reset();
+            delay(1000);
+            return;
         }
     } 
     else {
@@ -503,10 +498,10 @@ void loop()
             for (int i = 0; i < current_stage_queue_length; i++) {
                 lcd_cursor = 3+i;
                 if (invader_queue[i] == BLANK) {
-                    setSegments(lcd_cursor++, 0);
+                    lcd_print(" ");
                 } 
                 else if (invader_queue[i] == COMMANDER_INVADER) {
-                    setSegments(lcd_cursor++, COMMANDER_INVADER_CHAR_CODE);
+                    lcd_print("n");
                 } 
                 else {
                     lcd_print((word)invader_queue[i]);
@@ -519,6 +514,7 @@ void loop()
             aim_last_state = aim_current_state;
             fire_last_state = fire_current_state;
         }
+       delayMicroseconds(2000L);
     }
 }
 
